@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+
+export POSIXLY_CORRECT=yes
+
+
+
+DIR=$(pwd)
+norm=0
+ign=0
+error=0
+ignore=""
+
+
+if [[ $# -eq 1 ]]; then
+    if [[ "$1" = "-n" ]]; then
+        norm=1
+    elif [[ "$1" = "-i" ]]; then
+        error=1
+        echo "Wrong argument" >&2
+        exit 1
+    else
+        DIR=$1 
+    fi
+fi
+if [[ $# -eq 2 ]]; then
+    if [[ "$1" = "-i" ]]; then
+        ign=1
+        ignore=$2
+    elif [[ "$1" = "-n" ]]; then
+        norm=1
+        DIR=$2
+    else
+        error=1 #invalid argument
+        echo "Wrong argument" >&2
+        exit 1     
+    fi
+fi
+if [[ $# -eq 3 ]]; then
+    if [[ "$1" = "-i" ]]; then
+        ign=1
+        ignore=$2
+    fi
+    if [[ "$3" = "-n" ]]; then
+        norm=1
+    else
+        DIR=$3 
+    fi
+fi
+if [[ $# -eq 4 ]]; then
+    if [[ "$1" = "-i" ]]; then
+        ign=1
+        ignore=$2
+    fi
+    if [[ "$3" = "-n" ]]; then
+        norm=1
+        DIR=$4
+    else
+        error=1
+        echo "Wrong argument" >&2
+        exit 1
+    fi
+fi
+if [[ $# -gt 4 ]]; then
+    error=1
+    echo "Too many arguments" >&2
+    exit 1
+    #error msg to std err too many arguments
+fi
+
+#regex v1
+#if [[ "$DIR" =~ $ignore && $ign -eq 1 ]]; then 
+#regex v2
+#if [[ "$DIR" == *"$ignore"* && $ign -eq 1 ]]; then 
+
+#test for validity of directory
+if [[ "$DIR" =~ $ignore && $ign -eq 1 ]]; then 
+    #error message, root folder matches ignore regex (file ere) 
+    echo "FILE_ERE covers DIR" >&2
+    exit 2
+fi
+
+#argument is not a valid directory
+if [[ ! -d "$DIR" ]]; then
+    echo "Argument is not a valid directory" >&2
+    exit 4
+fi
+
+#change directory to searched directory
+cd "$DIR"
+
+
+####number of files
+NF=0
+###number of directories
+if [[ $ign -eq 1 ]]; then
+    ND=$(find -L . -type d ! -name "*$ignore*" 2>/dev/null | wc -l)
+    #while read dname
+    #do 
+    #((ND++))
+    #done <<< $(find -L . -type d ! -name "*$ignore*" 2>/dev/null)
+else
+    ND=$(find -L . -type d 2>/dev/null | wc -l)
+    #while read dname
+    #do 
+    #((ND++))
+    #done <<< $(find -L . -type d 2>/dev/null)
+fi
+
+###variable initialisation
+
+#   <100 B
+B_100=0
+
+#   <1 KiB
+KiB_1=0
+
+#   <10 KiB
+KiB_10=0
+
+#   <100 KiB
+KiB_100=0
+
+#   <1 MiB
+MiB_1=0
+
+#   <10 MiB
+MiB_10=0
+
+#   <100 MiB
+MiB_100=0
+
+#   <1 GiB
+GiB_1=0
+
+#   >=1 GiB
+GiB_100=0
+
+file=$(find -L . -type f 2>/dev/null)
+printf '%s\n' "$file" |
+{
+while read fname
+do
+    if [[ "$fname" =~ $ignore && $ign -eq 1 ]]; then 
+        continue
+    fi
+    
+    #non readable files
+    if [[ ! -r $fname ]]; then
+    error=1
+    continue
+    fi
+
+    #filesize
+    #SIZE=$(stat --printf="%s" "$fname") #nefunguje na eve
+
+    #alt filesize
+    SIZE=$(wc -c <$fname)
+
+    #count number of files
+    ((NF++))
+    #filesize by category
+    if [[ "$SIZE" -lt 100 ]]; then
+        ((B_100++))
+        continue
+    elif [[ "$SIZE" -lt 1024 ]]; then
+        ((KiB_1++))
+        continue
+    elif [[ "$SIZE" -lt 10240 ]]; then
+        ((KiB_10++))
+        continue
+    elif [[ "$SIZE" -lt 102400 ]]; then
+        ((KiB_100++))
+        continue
+    elif [[ "$SIZE" -lt 1048576 ]]; then
+        ((MiB_1++))
+        continue
+    elif [[ "$SIZE" -lt 10485760 ]]; then
+        ((MiB_10++))
+        continue
+    elif [[ "$SIZE" -lt 104857600 ]]; then
+        ((MiB_100++))
+        continue
+    elif [[ "$SIZE" -lt 1073741824 ]]; then
+        ((GiB_1++))
+        continue
+    elif [[ "$SIZE" -ge 1073741824 ]]; then
+        ((GiB_100++))
+    fi        
+done #<<< $(find -L . -type f 2>/dev/null)
+
+
+###histogram scaling
+if [[ $norm -eq 1 ]]; then
+    #terminal output
+    if [[ -t 1 ]]; then
+        termcols=$(tput cols)
+        termcols=$((termcols-13))
+    #no terminal
+    else
+        termcols=79
+        termcols=$((termcols-12))
+    fi
+#biggest number 
+    max=0
+    if [[ $B_100 -gt $max ]]; then
+        max=$B_100
+    fi
+    if [[ $KiB_1 -gt $max ]]; then
+        max=$KiB_1
+    fi
+    if [[ $KiB_10 -gt $max ]]; then
+        max=$KiB_10
+    fi
+    if [[ $KiB_100 -gt $max ]]; then
+        max=$KiB_100
+    fi
+    if [[ $MiB_1 -gt $max ]]; then
+        max=$MiB_1
+    fi
+    if [[ $MiB_10 -gt $max ]]; then
+        max=$MiB_10
+    fi
+    if [[ $MiB_100 -gt $max ]]; then
+        max=$MiB_100
+    fi
+    if [[ $GiB_1 -gt $max ]]; then
+        max=$GiB_1
+    fi
+    if [[ $GiB_100 -gt $max ]]; then
+        max=$GiB_100
+    fi
+
+if [[ $max -gt $termcols ]]; then
+#scaling
+    #scale=$((termcols/max))
+    scale=$(echo "$termcols/$max" | bc -l)
+
+    B_100=$(echo "$B_100 * $scale"| bc | awk '{print int($1+0.5)}')
+
+    KiB_1=$(echo "$KiB_1 * $scale"| bc | awk '{print int($1+0.5)}')
+
+    KiB_10=$(echo "$KiB_10 * $scale"| bc | awk '{print int($1+0.5)}')
+    
+    KiB_100=$(echo "$KiB_100 * $scale"| bc | awk '{print int($1+0.5)}')
+    
+    MiB_1=$(echo "$MiB_1 * $scale"| bc | awk '{print int($1+0.5)}')
+  
+    MiB_10=$(echo "$MiB_10 * $scale"| bc | awk '{print int($1+0.5)}')
+
+    MiB_100=$(echo "$MiB_100 * $scale"| bc | awk '{print int($1+0.5)}')
+
+    GiB_1=$(echo "$GiB_1 * $scale"| bc | awk '{print int($1+0.5)}')
+
+    GiB_100=$(echo "$GiB_100 * $scale"| bc | awk '{print int($1+0.5)}')
+   
+fi
+fi   
+
+
+#function for printing histogram hashes
+print(){
+i=1
+while [[ "$i" -le "$1" ]]
+do
+    echo -n "#"
+    ((i++))
+done
+}
+
+
+#print report
+echo "Root directory: $DIR"
+echo "Directories: $ND"
+echo "All files: $NF"
+echo "File size histogram:"    
+echo "  <100 B  : $(print "$B_100")"
+echo "  <1 KiB  : $(print "$KiB_1")"
+echo "  <10 KiB : $(print "$KiB_10")"
+echo "  <100 KiB: $(print "$KiB_100")"
+echo "  <1 MiB  : $(print "$MiB_1")"
+echo "  <10 MiB : $(print "$MiB_10")"
+echo "  <100 MiB: $(print "$MiB_100")"
+echo "  <1 GiB  : $(print "$GiB_1")"
+echo "  >=1 GiB : $(print "$GiB_100")"
+
+if [[ $error -eq 1 ]]; then
+    exit 1
+fi
+}
+
+
+
